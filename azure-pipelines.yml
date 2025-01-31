@@ -1,0 +1,45 @@
+trigger:
+- main
+
+pool:
+  name: Azure Pipelines
+
+steps:
+- task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@1
+  displayName: 'Install Terraform'
+
+- task: CopyFiles@2
+  displayName: 'Copy Files to Working Directory'
+  inputs:
+    SourceFolder: .
+    TargetFolder: '$(System.DefaultWorkingDirectory)/Terraform'
+    OverWrite: true
+
+- task: ms-devlabs.custom-terraform-tasks.custom-terraform-release-task.TerraformTaskV4@4
+  displayName: 'Terraform Init'
+  inputs:
+    command: init
+    workingDirectory: '$(System.DefaultWorkingDirectory)/Terraform/Infra'
+    backendServiceArm: 'vivek-testing-infra (66b3f5b6-8e0e-40da-bb11-2e607df4cf26)'
+    backendAzureRmResourceGroupName: 'ifra-tfstate'
+    backendAzureRmStorageAccountName: 'intraterraform'
+    backendAzureRmContainerName: 'containers'
+    backendAzureRmKey: 'terraform-prod.tfstate'
+    backendAzureRmUseEnvironmentVariablesForAuthentication: false
+    backendAzureRmUseEntraIdForAuthentication: false
+
+- task: ms-devlabs.custom-terraform-tasks.custom-terraform-release-task.TerraformTaskV4@4
+  displayName: 'Terraform Plan'
+  inputs:
+    command: plan
+    workingDirectory: '$(System.DefaultWorkingDirectory)/Terraform/Infra'
+    commandOptions: '-var-file="prod.tfvars"'
+    environmentServiceNameAzureRM: 'vivek-testing-infra (66b3f5b6-8e0e-40da-bb11-2e607df4cf26)'
+    backendAzureRmUseEnvironmentVariablesForAuthentication: false
+    backendAzureRmUseEntraIdForAuthentication: false
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish Terraform Artifact'
+  inputs:
+    PathtoPublish: '$(System.DefaultWorkingDirectory)/Terraform'
+    ArtifactName: Applicationterraform
