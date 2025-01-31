@@ -17,7 +17,7 @@ default_tags = {
 }
 
 lock_level = "ReadOnly"
-
+/*
 todoapp_aks = {
   aks = {
     name                = "azurermtodoapp"
@@ -46,3 +46,4 @@ todoapp_acr = {
   }
 }
 }
+/*
