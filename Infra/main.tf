@@ -5,7 +5,7 @@ module "resource_groups" {
   lock_level      = var.lock_level
 }
 
-/* module "todoapp_aks" {
+ module "todoapp_aks" {
   depends_on = [ module.resource_groups ]
   source = "../modules/azurerm_aks"
   todoapp_aks= var.todoapp_aks
@@ -17,4 +17,4 @@ module "azurerm_acr" {
   source = "../modules/azurerm_acr"
   todoapp_acr = var.todoapp_acr
   
-}/*
+}
