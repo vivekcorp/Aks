@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Select Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
+
+jobs:
+  get-stacks:
+    runs-on: ubuntu-latest
+    outputs:
+      stacks: ${{ steps.get-stacks.outputs.stack-list }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Get Stack Names
+        id: get-stacks
+        run: echo "stack-list=$(ls VIOPTM/Infra | jq -R -s -c 'split(\"\\n\")[:-1]')" >> $GITHUB_ENV
+
+  terraform-plan:
+    needs: get-stacks
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        stack: ${{ fromJson(needs.get-stacks.outputs.stacks) }}
+
+    env:
+      ARM_CLIENT_ID: ${{ secrets[github.event.inputs.environment == 'prod' && 'PROD_ARM_CLIENT_ID' || 'DEV_ARM_CLIENT_ID'] }}
+      ARM_CLIENT_SECRET: ${{ secrets[github.event.inputs.environment == 'prod' && 'PROD_ARM_CLIENT_SECRET' || 'DEV_ARM_CLIENT_SECRET'] }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets[github.event.inputs.environment == 'prod' && 'PROD_ARM_SUBSCRIPTION_ID' || 'DEV_ARM_SUBSCRIPTION_ID'] }}
+      ARM_TENANT_ID: ${{ secrets[github.event.inputs.environment == 'prod' && 'PROD_ARM_TENANT_ID' || 'DEV_ARM_TENANT_ID'] }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform Init
+        run: |
+          terraform init -backend-config="resource_group_name=ifra-tfstate" \
+                         -backend-config="storage_account_name=infrastoragetfstate" \
+                         -backend-config="container_name=infra-tfstate" \
+                         -backend-config="key=${{ github.event.inputs.environment }}.${{ matrix.stack }}.tfstate"
+
+      - name: Terraform Plan
+        run: terraform plan -var-file=environment/tfvars/${{ github.event.inputs.environment }}.tfvars -out=tfplan
+
+      - name: Upload Plan
+        uses: actions/upload-artifact@v3
+        with:
+          name: tfplan-${{ github.event.inputs.environment }}-${{ matrix.stack }}
+          path: tfplan

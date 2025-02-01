@@ -1,0 +1,62 @@
+name: CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Select Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
+
+jobs:
+  get-stacks:
+    runs-on: ubuntu-latest
+    outputs:
+      stacks: ${{ steps.get-stacks.outputs.stack-list }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Get Stack Names
+        id: get-stacks
+        run: echo "stack-list=$(ls VIOPTM/Infra | jq -R -s -c 'split(\"\\n\")[:-1]')" >> $GITHUB_ENV
+
+  manual-approval:
+    needs: get-stacks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Await Manual Approval
+        if: github.event.inputs.environment == 'prod'
+        uses: hmarr/auto-approve-action@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  terraform-apply:
+    needs: [get-stacks, manual-approval]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        stack: ${{ fromJson(needs.get-stacks.outputs.stacks) }}
+
+    env:
+      ARM_CLIENT_ID: ${{ github.event.inputs.environment == 'prod' && secrets.PROD_ARM_CLIENT_ID || secrets.DEV_ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ github.event.inputs.environment == 'prod' && secrets.PROD_ARM_CLIENT_SECRET || secrets.DEV_ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ github.event.inputs.environment == 'prod' && secrets.PROD_ARM_SUBSCRIPTION_ID || secrets.DEV_ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ github.event.inputs.environment == 'prod' && secrets.PROD_ARM_TENANT_ID || secrets.DEV_ARM_TENANT_ID }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Download Plan
+        uses: actions/download-artifact@v3
+        with:
+          name: tfplan-${{ github.event.inputs.environment }}-${{ matrix.stack }}
+          path: .
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
