@@ -1,0 +1,112 @@
+param (
+    [Parameter(Mandatory = $true)]
+    [ValidateSet("dev", "prod")]
+    [string]$env
+)
+
+# Step 1: Install necessary modules
+function Install-PsModule($Name, $MinimumVersion) {
+    if (Get-Module -ListAvailable -Name $Name) {
+        Write-Host "Module $Name already installed"
+    } else {
+        if ($null -ne $MinimumVersion) {
+            Install-Module -Name $Name -MinimumVersion $MinimumVersion -Force
+        } else {
+            Install-Module -Name $Name -Force
+        }
+    }
+}
+
+Install-PsModule -Name Az.DataFactory -MinimumVersion "1.15.0"
+Install-PsModule -Name "azure.datafactory.tools"
+Import-Module -Name "azure.datafactory.tools"
+
+# Step 2: Determine CSV path based on environment
+$csvPath = ".\adf_config\$env-adf.csv"
+
+if (-Not (Test-Path $csvPath)) {
+    Write-Host "CSV file not found for environment '$env': $csvPath"
+    exit
+}
+
+Write-Host "Using config file: $csvPath"
+$csvData = Import-Csv -Path $csvPath
+
+# Step 3: Process each row and update corresponding JSON file
+$updatedCount = 0  # Counter for updated objects
+
+foreach ($row in $csvData) {
+    $folder = $row.type.Trim()
+    $fileName = "$($row.name.Trim()).json"
+    $filePath = Join-Path -Path $folder -ChildPath $fileName
+
+    if (-Not (Test-Path $filePath)) {
+        Write-Host "File not found: $filePath"
+        continue
+    }
+
+    $jsonContent = Get-Content -Path $filePath -Raw | ConvertFrom-Json
+
+    # Parse path and update value
+    $pathParts = $row.path -split '\.'
+    $current = $jsonContent
+
+    for ($i = 0; $i -lt $pathParts.Length; $i++) {
+        $key = $pathParts[$i]
+
+        if ($key -match "(\w+)
+
+\[(\d+)\]
+
+") {
+            $keyName = $matches[1]
+            $index = [int]$matches[2]
+
+            if ($i -eq $pathParts.Length - 1) {
+                $current.$keyName[$index] = $row.value
+                $updatedCount++
+            } else {
+                $current = $current.$keyName[$index]
+            }
+        } else {
+            if ($i -eq $pathParts.Length - 1) {
+                $current.$key = $row.value
+                $updatedCount++
+            } else {
+                $current = $current.$key
+            }
+        }
+    }
+
+    # Save updated file
+    $jsonContent | ConvertTo-Json -Depth 20 | Set-Content -Path $filePath -Encoding UTF8
+    Write-Host "Updated: $filePath"
+}
+
+Write-Host "Total objects updated: $updatedCount"
+
+# Step 4: Deployment Options
+$opt = New-AdfPublishOption
+$opt.CreateNewInstance = $true
+$opt.StopStartTriggers = $true
+$opt.DeployGlobalParams = $true
+$opt.DeleteNotInSource = $false
+
+$opt.Excludes.Add("integrationruntime.*", "")
+$opt.Excludes.Add("linkedService.Blob", "")
+$opt.Excludes.Add("linkedService.kKv", "")
+
+# Step 5: Environment setup
+$env:rg_name = "rg-$env-euw-1lz-cpts"
+$env:location = "WestEurope"
+$env:adf_name = "adf-$env-cpts"
+
+# Step 6: Deploy to Azure Data Factory
+Publish-AdfV2FromJson -RootFolder "." `
+    -ResourceGroupName "$env:rg_name" `
+    -DataFactoryName "$env:adf_name" `
+    -Location "$env:location" `
+    -Option $opt `
+    -Stage $env
+
+Write-Host "ADF deployment complete."
