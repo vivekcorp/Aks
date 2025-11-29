@@ -3,15 +3,10 @@ kind: Pod
 metadata:
   name: nginx-mozilla-pod
   labels:
-    app: multi-container
+    app: nginx-mozilla
 spec:
   containers:
     - name: nginx
       image: nginx:latest
       ports:
         - containerPort: 80
-
-    - name: mozilla
-      image: jlesage/firefox
-      ports:
-        - containerPort: 5800
